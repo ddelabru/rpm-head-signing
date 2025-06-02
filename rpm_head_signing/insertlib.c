@@ -578,6 +578,68 @@ out:
     }
 }
 
+static PyObject *
+insert_sig_hdr(PyObject *self, PyObject *args)
+{
+    bool success = false;
+    const char *rpm_path;
+    const char *sigh_path;
+    FD_t rpm_fd = NULL;
+    FD_t sigh_fd = NULL;
+    off_t sigStart = 0;
+    Header sigh_old = NULL;
+    Header sigh = NULL;
+    off_t headerStart = 0;
+    Header h = NULL;
+
+    if (!PyArg_ParseTuple(args, "ss:insert_sig_hdr", &rpm_path, &sigh_path))
+        return NULL;
+
+    rpm_fd = Fopen(rpm_path, "r+.ufdio");
+    if (rpm_fd == NULL || Ferror(rpm_fd)) {
+        PyErr_Format(PyExc_Exception, "Error opening RPM file: %s", Fstrerror(rpm_fd));
+        goto sig_hdr_out;
+    }
+
+    if (!read_rpm(rpm_fd, &sigStart, &sigh_old, &headerStart, &h)) {
+        goto sig_hdr_out;
+    }
+
+    sigh_fd = Fopen(sigh_path, "r+ufdio");
+    if (sigh_fd == NULL || Ferror(sigh_fd)) {
+        PyErr_Format(PyExc_Exception, "Error opening signature header file: %s", Fstrerror(sigh_fd));
+        goto sig_hdr_out;
+    }
+
+    sigh = headerRead(sigh_fd, HEADER_MAGIC_YES);
+    if (sigh == NULL) {
+        PyErr_SetString(PyExc_Exception, "Error reading signature header from signature header file");
+        goto sig_hdr_out;
+    }
+
+    // Create new RPM
+    if (!write_new_rpm(rpm_path, rpm_fd, &sigh, headerStart, &h)) {
+        // This function sets its own exceptions
+        goto sig_hdr_out;
+    }
+
+    success = true;
+
+sig_hdr_out:
+    if (rpm_fd) Fclose(rpm_fd);
+    if (sigh_fd) Fclose(sigh_fd);
+
+    headerFree(sigh_old);
+    headerFree(sigh);
+    headerFree(h);
+
+    if (success) {
+        Py_RETURN_NONE;
+    } else {
+        return NULL;
+    }
+}
+
 #define CHANGED_NONE 0
 #define CHANGED_IMA_SIG_BYTEORDER (1 << 0)
 #define CHANGED_IMA_SIG_LENGTH (1 << 1)
@@ -778,6 +840,7 @@ out:
 static PyMethodDef InsertLibMethods[] = {
     {"insert_signatures", insert_signatures, METH_VARARGS, "Insert signatures into an RPM"},
     {"fix_ima_signatures", fix_ima_signatures, METH_VARARGS, "Fix IMA signatures in an RPM"},
+    {"insert_sig_hdr", insert_sig_hdr, METH_VARARGS, "Insert raw signature header into an RPM"},
     {NULL, NULL, 0, NULL},
 };
 
