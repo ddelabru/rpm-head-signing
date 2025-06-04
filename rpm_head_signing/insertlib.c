@@ -405,6 +405,14 @@ insert_signatures(PyObject *self, PyObject *args)
     unsigned int origSigSize = headerSizeof(sigh, HEADER_MAGIC_YES);
 #endif
 
+    // Insert IMA signatures
+    if (ima_lookup != NULL) {
+        if (!insert_ima_signatures(sigh, h, ima_lookup)) {
+            // This function sets its own exceptions
+            goto out;
+        }
+    }
+
     if (signature != NULL) {
         // Insert v4 signature header
         const unsigned char *signature_buf = (unsigned char *)PyByteArray_AsString(signature);
@@ -442,14 +450,6 @@ insert_signatures(PyObject *self, PyObject *args)
         // For some reason, rpmRC isn't used here, and 0 - failure, 1 - success
         if (headerPut(sigh, sigtd, HEADERPUT_DEFAULT) != 1) {
             PyErr_SetString(PyExc_Exception, "Error setting signature header");
-            goto out;
-        }
-    }
-
-    // Insert IMA signatures
-    if (ima_lookup != NULL) {
-        if (!insert_ima_signatures(sigh, h, ima_lookup)) {
-            // This function sets its own exceptions
             goto out;
         }
     }
